@@ -96,7 +96,7 @@ contract CounterTest is Test {
         
         bool[] memory isSigning = new bool[](ownerBalances.length);
         console2.log("cases: %d", numCases);
-        for (uint256 num = 1; num < numCases; num++) {
+        for (uint256 num = 0; num < numCases; num++) {
             uint256 bitMask = num;
             uint256 countSigners = 0;
             for (uint256 idx = 0; idx < ownerBalances.length; idx++) {
@@ -108,9 +108,6 @@ contract CounterTest is Test {
                 }
                 bitMask /= 2;
             }
-
-            if (countSigners == 0)
-                continue;
 
             TransactionData memory txn = TransactionData({
                 callType: 0,
