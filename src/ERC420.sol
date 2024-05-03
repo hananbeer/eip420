@@ -67,11 +67,12 @@ contract ERC420 is ERC20 {
             // TODO: uncomment for prod, comment for testing only to avoid stupid sort...
             // prevSigner = signer;
             signingPower += balanceOf(signer);
+
+            if (signingPower >= QUORUM)
+                break;
         }
 
-        // require(signingPower >= QUORUM, "quorum unmet");
-        if (signingPower < QUORUM)
-            return (false, hex"");
+        require(signingPower >= QUORUM, "quorum unmet");
 
         // TODO: consider gas? delegate calls?
 

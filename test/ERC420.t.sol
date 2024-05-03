@@ -74,8 +74,8 @@ contract CounterTest is Test {
         string[4] memory signerNames = [
             "main",
             "secondary",
-            "trustee2",
-            "trustee1"
+            "trustee1",
+            "trustee2"
         ];
 
         OwnerBalance[] memory ownerBalances = new OwnerBalance[](4);
@@ -125,7 +125,7 @@ contract CounterTest is Test {
             uint256 c = 0;
             for (uint256 si = 0; si < ownerBalances.length; si++) {
                 if (isSigning[si]) {
-                    console2.log("active signer: %s", signerNames[si]);
+                    console2.log("active signer: %s, balance: %d", signerNames[si], ownerBalances[si].balance);
                     (bytes32 r, bytes32 vs) = _sign(signerNames[si], txn);
                     sigs[2*c] = r;
                     sigs[2*c + 1] = vs;
@@ -134,8 +134,16 @@ contract CounterTest is Test {
                 }
             }
 
-            (bool success, bytes memory res) = erc420.execute(txn, sigs);
-            console2.log("[case #%s] balances: %d | %s", num, balances, success);
+            bool success;
+            try erc420.execute(txn, sigs) returns (bool callSuccess, bytes memory res) {
+                success = true;
+            } catch {
+                success = false;
+            }
+
+            console2.log("[case #%s] cumulative signing power: %d | %s", num, balances, success);
+            console2.log("");
+            console2.log("");
             console2.log("");
         }
     }
