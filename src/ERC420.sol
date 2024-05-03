@@ -4,8 +4,6 @@ pragma solidity ^0.8.13;
 import "openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-import {console2} from "forge-std/Test.sol";
-
 struct OwnerBalance {
     address owner;
     uint96 balance;
@@ -65,13 +63,13 @@ contract ERC420 is ERC20 {
             bytes32 r = signatures[i];
             bytes32 vs = signatures[i + 1];
             address signer = ECDSA.recover(hash, r, vs);
-            console2.log("recovered signer: %x", signer);
             require(signer > prevSigner, "signers must have ascending order");
             signingPower += balanceOf(signer);
         }
 
         // require(signingPower >= QUORUM, "quorum unmet");
-        return (false, hex"");
+        if (signingPower < QUORUM)
+            return (false, hex"");
 
         // TODO: consider gas? delegate calls?
 

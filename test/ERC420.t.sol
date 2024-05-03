@@ -92,48 +92,51 @@ contract CounterTest is Test {
 
         ERC420 erc420 = new ERC420(quorum, ownerBalances);
 
-        uint256 factorial = 1;
-        for (uint256 i = 2; i <= ownerBalances.length; i++) {
-            factorial *= i;
-        }
-
+        uint256 numCases = 1 << ownerBalances.length;
+        
         bool[] memory isSigning = new bool[](ownerBalances.length);
-        console2.log("cases: %d", factorial);
-        for (uint256 num = 0; num < factorial; num++) {
+        console2.log("cases: %d", numCases);
+        for (uint256 num = 1; num < numCases; num++) {
             uint256 bitMask = num;
             uint256 countSigners = 0;
-            for (uint256 idx = 0; idx < isSigning.length; idx++) {
-                if (bitMask % ownerBalances.length > 0) {
-                    isSigning[ownerBalances.length - idx - 1] = true;
+            for (uint256 idx = 0; idx < ownerBalances.length; idx++) {
+                if (bitMask % 2 != 0) {
+                    isSigning[idx] = true;
                     countSigners++;
                 } else {
-                    isSigning[ownerBalances.length - idx - 1] = false;
+                    isSigning[idx] = false;
                 }
-                bitMask /= ownerBalances.length;
+                bitMask /= 2;
             }
+
+            if (countSigners == 0)
+                continue;
 
             TransactionData memory txn = TransactionData({
                 callType: 0,
                 expiry: uint64(block.timestamp + 1),
                 target: address(this),
                 value: 0,
-                data: abi.encodeWithSignature("callbackInt(uint256)", abi.encode(num))
+                data: abi.encodeWithSignature("callbackInt(uint256)", num)
             });
 
             bytes32[] memory sigs = new bytes32[](2 * countSigners);
             uint256 balances = 0;
+            uint256 c = 0;
             for (uint256 si = 0; si < ownerBalances.length; si++) {
                 if (isSigning[si]) {
                     console2.log("active signer: %s", signerNames[si]);
                     (bytes32 r, bytes32 vs) = _sign(signerNames[si], txn);
-                    sigs[2*si] = r;
-                    sigs[2*si + 1] = vs;
+                    sigs[2*c] = r;
+                    sigs[2*c + 1] = vs;
+                    c++; // a goddamn classic
                     balances += erc420.balanceOf(ownerBalances[si].owner);
                 }
             }
 
             (bool success, bytes memory res) = erc420.execute(txn, sigs);
             console2.log("[case #%s] balances: %d | %s", num, balances, success);
+            console2.log("");
         }
     }
 }
