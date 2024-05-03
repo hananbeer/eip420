@@ -74,8 +74,8 @@ contract CounterTest is Test {
         string[4] memory signerNames = [
             "main",
             "secondary",
-            "trustee1",
-            "trustee2"
+            "trustee2",
+            "trustee1"
         ];
 
         OwnerBalance[] memory ownerBalances = new OwnerBalance[](4);

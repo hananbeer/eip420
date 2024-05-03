@@ -64,6 +64,8 @@ contract ERC420 is ERC20 {
             bytes32 vs = signatures[i + 1];
             address signer = ECDSA.recover(hash, r, vs);
             require(signer > prevSigner, "signers must have ascending order");
+            // TODO: uncomment for prod, comment for testing only to avoid stupid sort...
+            // prevSigner = signer;
             signingPower += balanceOf(signer);
         }
 
