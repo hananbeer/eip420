@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {ERC420, TransactionData, OwnerBalance, ExecutionRecord} from "../src/ERC420.sol";
+import {ERC420, TransactionData, OwnerBalance, ExecutionRecord, TxFlag_vaultLock, TxFlag_chainLock} from "../src/ERC420.sol";
 
 contract CounterTest is Test {
     function setUp() public {}
@@ -17,10 +17,11 @@ contract CounterTest is Test {
 
     function _sign(
         string memory name,
-        TransactionData memory txn
+        TransactionData memory txn,
+        ERC420 vault
     ) internal returns (bytes32, bytes32) {
         (address addr, uint256 pk) = makeAddrAndKey(name);
-        bytes32 hash = keccak256(abi.encode(txn));
+        bytes32 hash = vault.getSigHash(txn);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, hash);
 
         if (
@@ -50,22 +51,27 @@ contract CounterTest is Test {
         OwnerBalance[] memory ownerBalances = new OwnerBalance[](1);
         ownerBalances[0] = OwnerBalance(makeAddr(name), uint96(quorum));
 
-        ERC420 erc420 = new ERC420(quorum, ownerBalances);
+        ERC420 vault = new ERC420(
+            "Single Owner Vault",
+            "SOV",
+            quorum,
+            ownerBalances
+        );
 
         TransactionData memory txn = TransactionData({
-            callType: 0,
+            flags: 0,
             expiry: uint64(block.timestamp + 1),
             target: address(this),
             value: 0,
             data: abi.encodeWithSignature("callback(bytes)", hex"abcd")
         });
 
-        (bytes32 r, bytes32 vs) = _sign(name, txn);
+        (bytes32 r, bytes32 vs) = _sign(name, txn, vault);
 
         bytes32[] memory sigs = new bytes32[](2);
         sigs[0] = r;
         sigs[1] = vs;
-        erc420.execute(txn, sigs);
+        vault.execute(txn, sigs);
     }
 
     function test_multipleOwners() public {
@@ -90,10 +96,15 @@ contract CounterTest is Test {
             ownerBalances[i] = OwnerBalance(makeAddr(signerNames[i]), tokens);
         }
 
-        ERC420 erc420 = new ERC420(quorum, ownerBalances);
+        ERC420 vault = new ERC420(
+            "Multi Owner Vault",
+            "MOV",
+            quorum,
+            ownerBalances
+        );
 
         uint256 numCases = 1 << ownerBalances.length;
-        
+
         bool[] memory isSigning = new bool[](ownerBalances.length);
         console2.log("cases: %d", numCases);
         for (uint256 num = 0; num < numCases; num++) {
@@ -110,7 +121,7 @@ contract CounterTest is Test {
             }
 
             TransactionData memory txn = TransactionData({
-                callType: 0,
+                flags: 0,
                 expiry: uint64(block.timestamp + 1),
                 target: address(this),
                 value: 0,
@@ -122,26 +133,121 @@ contract CounterTest is Test {
             uint256 c = 0;
             for (uint256 si = 0; si < ownerBalances.length; si++) {
                 if (isSigning[si]) {
-                    console2.log("active signer: %s, balance: %d", signerNames[si], ownerBalances[si].balance);
-                    (bytes32 r, bytes32 vs) = _sign(signerNames[si], txn);
-                    sigs[2*c] = r;
-                    sigs[2*c + 1] = vs;
+                    console2.log(
+                        "active signer: %s, balance: %d",
+                        signerNames[si],
+                        ownerBalances[si].balance
+                    );
+                    (bytes32 r, bytes32 vs) = _sign(
+                        signerNames[si],
+                        txn,
+                        vault
+                    );
+                    sigs[2 * c] = r;
+                    sigs[2 * c + 1] = vs;
                     c++; // a goddamn classic
-                    balances += erc420.balanceOf(ownerBalances[si].owner);
+                    balances += vault.balanceOf(ownerBalances[si].owner);
                 }
             }
 
             bool success;
-            try erc420.execute(txn, sigs) returns (bool callSuccess, bytes memory res) {
+            try vault.execute(txn, sigs) returns (
+                bool callSuccess,
+                bytes memory res
+            ) {
                 success = true;
             } catch {
                 success = false;
             }
 
-            console2.log("[case #%s] cumulative signing power: %d | %s", num, balances, success);
+            console2.log(
+                "[case #%s] cumulative signing power: %d | %s",
+                num,
+                balances,
+                success
+            );
             console2.log("");
             console2.log("");
             console2.log("");
         }
+    }
+
+    function test_vaultLock() public {
+        uint256 quorum = 100;
+
+        string memory name = "alice";
+        OwnerBalance[] memory ownerBalances = new OwnerBalance[](1);
+        ownerBalances[0] = OwnerBalance(makeAddr(name), uint96(quorum));
+
+        ERC420 vault1 = new ERC420(
+            "Locked Vault 1",
+            "SOV",
+            quorum,
+            ownerBalances
+        );
+        ERC420 vault2 = new ERC420(
+            "Locked Vault 2",
+            "SOV",
+            quorum,
+            ownerBalances
+        );
+
+        TransactionData memory txn = TransactionData({
+            flags: TxFlag_vaultLock,
+            expiry: uint64(block.timestamp + 1),
+            target: address(this),
+            value: 0,
+            data: abi.encodeWithSignature("callback(bytes)", hex"abcd")
+        });
+
+        // sign with vault1 but execute on vault2
+        (bytes32 r, bytes32 vs) = _sign(name, txn, vault1);
+
+        bytes32[] memory sigs = new bytes32[](2);
+        sigs[0] = r;
+        sigs[1] = vs;
+        try vault2.execute(txn, sigs) {
+            revert(
+                "execution on locked vault is expected to fail but succeeded"
+            );
+        } catch {}
+    }
+
+    function test_chainLock() public {
+        uint256 quorum = 100;
+
+        string memory name = "alice";
+        OwnerBalance[] memory ownerBalances = new OwnerBalance[](1);
+        ownerBalances[0] = OwnerBalance(makeAddr(name), uint96(quorum));
+
+        ERC420 vault = new ERC420(
+            "Chain Locked Vault",
+            "CLV",
+            quorum,
+            ownerBalances
+        );
+
+        TransactionData memory txn = TransactionData({
+            flags: TxFlag_chainLock,
+            expiry: uint64(block.timestamp + 1),
+            target: address(this),
+            value: 0,
+            data: abi.encodeWithSignature("callback(bytes)", hex"abcd")
+        });
+
+        (bytes32 r, bytes32 vs) = _sign(name, txn, vault);
+
+        bytes32[] memory sigs = new bytes32[](2);
+        sigs[0] = r;
+        sigs[1] = vs;
+
+        // sign with one chain id but call on a different chain id
+        vm.chainId(block.chainid + 1);
+
+        try vault.execute(txn, sigs) {
+            revert(
+                "execution on chain locked vault is expected to fail but succeeded"
+            );
+        } catch {}
     }
 }
