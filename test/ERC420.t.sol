@@ -77,11 +77,13 @@ contract CounterTest is Test {
     function test_multipleOwners() public {
         uint256 quorum = 10;
 
+        // signatures is expected to be sorted by signer address
+        // this order was done manually using the helper console log below
         string[4] memory signerNames = [
-            "main",
-            "secondary",
             "trustee1",
-            "trustee2"
+            "main",
+            "trustee2",
+            "secondary"
         ];
 
         OwnerBalance[] memory ownerBalances = new OwnerBalance[](4);
@@ -94,6 +96,9 @@ contract CounterTest is Test {
             }
 
             ownerBalances[i] = OwnerBalance(makeAddr(signerNames[i]), tokens);
+            // signatures is expected to be sorted by signer address
+            // uncomment this to sort manually if you get "signers must have ascending order"
+            // console2.log("owner %s = %x", signerNames[i], ownerBalances[i].owner);
         }
 
         ERC420 vault = new ERC420(
@@ -106,7 +111,6 @@ contract CounterTest is Test {
         uint256 numCases = 1 << ownerBalances.length;
 
         bool[] memory isSigning = new bool[](ownerBalances.length);
-        console2.log("cases: %d", numCases);
         for (uint256 num = 0; num < numCases; num++) {
             uint256 bitMask = num;
             uint256 countSigners = 0;
@@ -169,6 +173,21 @@ contract CounterTest is Test {
             console2.log("");
             console2.log("");
             console2.log("");
+
+            if (
+                vault.getSigningPower(vault.getSigHash(txn), sigs) <
+                vault.QUORUM()
+            ) {
+                require(
+                    !success,
+                    "multi owners execution succeeded even though quorum was unmet"
+                );
+            } else {
+                require(
+                    success,
+                    "multi owners have quorum but execution failed"
+                );
+            }
         }
     }
 

@@ -54,8 +54,6 @@ contract ERC420 is ERC20 {
         require(totalSupply() >= QUORUM, "total supply cannot reach quorum");
     }
 
-    // TODO: should this contract prevent calls to itself, or specific token transfers??
-
     function getSigHash(TransactionData calldata txn) public returns (bytes32) {
         return keccak256(abi.encode(
             SIGHASH,
@@ -79,8 +77,7 @@ contract ERC420 is ERC20 {
             bytes32 vs = signatures[i + 1];
             address signer = ECDSA.recover(hash, r, vs);
             require(signer > prevSigner, "signers must have ascending order");
-            // TODO: uncomment for prod, comment for testing only to avoid stupid sort...
-            // prevSigner = signer;
+            prevSigner = signer;
             signingPower += balanceOf(signer);
         }
 
