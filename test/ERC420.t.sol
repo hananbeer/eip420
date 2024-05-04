@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {ERC420, TransactionData, OwnerBalance, ExecutionRecord, TxFlag_vaultLock, TxFlag_chainLock} from "../src/ERC420.sol";
+import {ERC420, TransactionData, OwnerBalance, ExecutionRecord, TxFlag_delegateCall, TxFlag_vaultLock, TxFlag_chainLock} from "../src/ERC420.sol";
 
 contract CounterTest is Test {
     function setUp() public {}
@@ -247,6 +247,44 @@ contract CounterTest is Test {
         try vault.execute(txn, sigs) {
             revert(
                 "execution on chain locked vault is expected to fail but succeeded"
+            );
+        } catch {}
+    }
+
+    function test_delegateCall() public {
+        uint256 quorum = 100;
+
+        string memory name = "alice";
+        OwnerBalance[] memory ownerBalances = new OwnerBalance[](1);
+        ownerBalances[0] = OwnerBalance(makeAddr(name), uint96(quorum));
+
+        ERC420 vault = new ERC420(
+            "Single Owner Vault",
+            "SOV",
+            quorum - 1, // allow transferring 1 token
+            ownerBalances
+        );
+
+        // impersonate alice and transfer some tokens to fail delegatecall quorum requirements
+        vm.prank(makeAddr(name));
+        vault.transfer(address(this), 1); // just 1 token
+
+        TransactionData memory txn = TransactionData({
+            flags: TxFlag_delegateCall,
+            expiry: uint64(block.timestamp + 1),
+            target: address(this),
+            value: 0,
+            data: abi.encodeWithSignature("callback(bytes)", hex"abcd")
+        });
+
+        (bytes32 r, bytes32 vs) = _sign(name, txn, vault);
+
+        bytes32[] memory sigs = new bytes32[](2);
+        sigs[0] = r;
+        sigs[1] = vs;
+        try vault.execute(txn, sigs) {
+            revert(
+                "execution of delegatecall is expected to fail without full quorum but succeeded"
             );
         } catch {}
     }

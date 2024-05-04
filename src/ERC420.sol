@@ -12,7 +12,6 @@ struct OwnerBalance {
 uint32 constant TxFlag_delegateCall = 1;
 uint32 constant TxFlag_vaultLock = 2;
 uint32 constant TxFlag_chainLock = 4;
-uint32 constant TxFlag_saveRecord = 8;
 
 struct TransactionData {
     uint32 flags;
@@ -95,6 +94,8 @@ contract ERC420 is ERC20 {
         require(txn.expiry > block.timestamp || txn.expiry == 0, "transaction expired");
 
         bytes32 hash = getSigHash(txn);
+        require(executionHistory[hash].block == 0, "transaction already executed");
+
         uint256 signingPower = getSigningPower(hash, signatures);
         require(signingPower >= QUORUM, "quorum unmet");
 
@@ -105,14 +106,9 @@ contract ERC420 is ERC20 {
             success: false
         });
 
-        // NOTE: callee can consume remaining gas by returning large memory amounts...
-        // need to ensure executionHistory record is created before calling, maybe should give up on the gas used
-        // and shave a few gas on the second storage write... (although slot is warm so no biggie)
+        // avoid reentrancy by writing record before execution
+        // gas used & status will be updated later (storage will be warm so it's cheap)
         executionHistory[hash] = record;
-
-        // if (txn.flags & TxFlag_saveRecord != 0) {
-        //     executionHistory.push(txn);
-        // }
 
         // gasUsed only measures the call itself, not the quorum calculation
         uint256 gasBefore = gasleft();
