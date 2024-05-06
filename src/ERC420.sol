@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 struct OwnerBalance {
     address owner;
@@ -54,7 +55,11 @@ contract ERC420 is ERC20 {
         require(totalSupply() >= QUORUM, "total supply cannot reach quorum");
     }
 
-    function getSigHash(TransactionData calldata txn) public returns (bytes32) {
+    function decimals() public pure override returns (uint8) {
+        return 0;
+    }
+
+    function getSigHash(TransactionData calldata txn) public view returns (bytes32) {
         return keccak256(abi.encode(
             SIGHASH,
             txn.flags & TxFlag_chainLock != 0 ? block.chainid : 0,
@@ -63,19 +68,26 @@ contract ERC420 is ERC20 {
         ));
     }
 
-    function getSigningPower(bytes32 hash, bytes32[] calldata signatures) public returns (uint256) {
-        if (signatures.length == 0) {
+    function getSigningPower(bytes32 hash, bytes32[] calldata signatures) public view returns (uint256) {
+        uint256 length = signatures.length;
+        if (length == 0) {
             return balanceOf(msg.sender);
         }
 
-        require(signatures.length % 2 == 0, "got partial signature");
-
         uint256 signingPower = 0;
         address prevSigner = address(0);
-        for (uint256 i = 0; i < signatures.length; i += 2) {
-            bytes32 r = signatures[i];
-            bytes32 vs = signatures[i + 1];
-            address signer = ECDSA.recover(hash, r, vs);
+        uint256 i = 0;
+        while (i < length) {
+            address signer;
+            bytes32 r = signatures[i++];
+            if (r >> 160 == 0) {
+                // if signer is a contract it cannot sign with ecdsa, call isValidERC1271SignatureNow instead
+                signer = address(uint160(uint256(r)));
+                require(SignatureChecker.isValidERC1271SignatureNow(signer, hash, hex""), "ERC1271 signature rejected");
+            } else {
+                bytes32 vs = signatures[i++];
+                signer = ECDSA.recover(hash, r, vs);
+            }
             require(signer > prevSigner, "signers must have ascending order");
             prevSigner = signer;
             signingPower += balanceOf(signer);

@@ -155,10 +155,7 @@ contract CounterTest is Test {
             }
 
             bool success;
-            try vault.execute(txn, sigs) returns (
-                bool callSuccess,
-                bytes memory res
-            ) {
+            try vault.execute(txn, sigs) {
                 success = true;
             } catch {
                 success = false;
@@ -306,5 +303,46 @@ contract CounterTest is Test {
                 "execution of delegatecall is expected to fail without full quorum but succeeded"
             );
         } catch {}
+    }
+
+    // https://eips.ethereum.org/EIPS/eip-1271
+    function isValidSignature(
+        bytes32 _hash,
+        bytes calldata _signature
+    ) external view returns (bytes4) {
+        if (_hash == _lastestHash) {
+            return 0x1626ba7e;
+        } else {
+            return 0xffffffff;
+        }
+    }
+
+    bytes32 _lastestHash;
+    function test_contractOwner() public {
+        uint256 quorum = 100;
+
+        OwnerBalance[] memory ownerBalances = new OwnerBalance[](1);
+        ownerBalances[0] = OwnerBalance(address(this), uint96(quorum));
+
+        ERC420 vault = new ERC420(
+            "Contract Owner Vault",
+            "COV",
+            quorum,
+            ownerBalances
+        );
+
+        TransactionData memory txn = TransactionData({
+            flags: 0,
+            expiry: uint64(block.timestamp + 1),
+            target: address(this),
+            value: 0,
+            data: abi.encodeWithSignature("callback(bytes)", hex"abcdef")
+        });
+
+        _lastestHash = vault.getSigHash(txn);
+
+        bytes32[] memory sigs = new bytes32[](1);
+        sigs[0] = bytes32(uint256(uint160(address(this))));
+        vault.execute(txn, sigs);
     }
 }
